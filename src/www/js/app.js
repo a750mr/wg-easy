@@ -36,6 +36,7 @@ new Vue({
     clientDelete: null,
     clientCreate: null,
     clientCreateName: '',
+    clientLifeSpan: '',
     clientEditName: null,
     clientEditNameId: null,
     clientEditAddress: null,
@@ -208,9 +209,10 @@ new Vue({
     },
     createClient() {
       const name = this.clientCreateName;
+      const lifespan = this.clientLifeSpan;
       if (!name) return;
 
-      this.api.createClient({ name })
+      this.api.createClient({ name, lifespan})
         .catch(err => alert(err.message || err.toString()))
         .finally(() => this.refresh().catch(console.error));
     },
@@ -234,6 +236,10 @@ new Vue({
         .catch(err => alert(err.message || err.toString()))
         .finally(() => this.refresh().catch(console.error));
     },
+    updateClientLifetime(client, lifespan) {
+      this.api.updateClientLifetime({ clientId: client.id, lifespan })
+          .catch(err => alert(err.message || err.toString()))
+          .finally(() => this.refresh().catch(console.error));},
     updateClientAddress(client, address) {
       this.api.updateClientAddress({ clientId: client.id, address })
         .catch(err => alert(err.message || err.toString()))

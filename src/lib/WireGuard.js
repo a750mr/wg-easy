@@ -112,7 +112,9 @@ PostDown = ${WG_POST_DOWN}
 PublicKey = ${client.publicKey}
 PresharedKey = ${client.preSharedKey}
 AllowedIPs = ${client.address}/32`;
+      client.updatedAt = new Date(); // Обновляем значение updatedAt для клиента
     }
+
 
     debug('Config saving...');
     await fs.writeFile(path.join(WG_PATH, 'wg0.json'), JSON.stringify(config, false, 2), {
@@ -132,55 +134,63 @@ AllowedIPs = ${client.address}/32`;
 
   async getClients() {
     const config = await this.getConfig();
-    const clients = Object.entries(config.clients).map(([clientId, client]) => ({
-      id: clientId,
-      name: client.name,
-      enabled: client.enabled,
-      address: client.address,
-      publicKey: client.publicKey,
-      createdAt: new Date(client.createdAt),
-      updatedAt: new Date(client.updatedAt),
-      allowedIPs: client.allowedIPs,
+    const clients = Object.entries(config.clients).map(([clientId, client]) => {
+      const expirationDate = client.expirationDate ? new Date(client.expirationDate) : null;
+      const remainingTime = expirationDate ? Util.calculateRemainingTime(expirationDate) : null;
+      return {
+        id: clientId,
+        name: client.name,
+        enabled: client.enabled,
+        address: client.address,
+        publicKey: client.publicKey,
+        createdAt: new Date(client.createdAt),
+        updatedAt: new Date(client.updatedAt),
+        allowedIPs: client.allowedIPs,
 
-      persistentKeepalive: null,
-      latestHandshakeAt: null,
-      transferRx: null,
-      transferTx: null,
-    }));
+        persistentKeepalive: null,
+        latestHandshakeAt: null,
+        transferRx: null,
+        transferTx: null,
+
+        expirationDate,
+        remainingTime,
+      };
+    });
 
     // Loop WireGuard status
     const dump = await Util.exec('wg show wg0 dump', {
       log: false,
     });
     dump
-      .trim()
-      .split('\n')
-      .slice(1)
-      .forEach(line => {
-        const [
-          publicKey,
-          preSharedKey, // eslint-disable-line no-unused-vars
-          endpoint, // eslint-disable-line no-unused-vars
-          allowedIps, // eslint-disable-line no-unused-vars
-          latestHandshakeAt,
-          transferRx,
-          transferTx,
-          persistentKeepalive,
-        ] = line.split('\t');
+        .trim()
+        .split('\n')
+        .slice(1)
+        .forEach(line => {
+          const [
+            publicKey,
+            preSharedKey, // eslint-disable-line no-unused-vars
+            endpoint, // eslint-disable-line no-unused-vars
+            allowedIps, // eslint-disable-line no-unused-vars
+            latestHandshakeAt,
+            transferRx,
+            transferTx,
+            persistentKeepalive,
+          ] = line.split('\t');
 
-        const client = clients.find(client => client.publicKey === publicKey);
-        if (!client) return;
+          const client = clients.find(client => client.publicKey === publicKey);
+          if (!client) return;
 
-        client.latestHandshakeAt = latestHandshakeAt === '0'
-          ? null
-          : new Date(Number(`${latestHandshakeAt}000`));
-        client.transferRx = Number(transferRx);
-        client.transferTx = Number(transferTx);
-        client.persistentKeepalive = persistentKeepalive;
-      });
+          client.latestHandshakeAt = latestHandshakeAt === '0'
+              ? null
+              : new Date(Number(`${latestHandshakeAt}000`));
+          client.transferRx = Number(transferRx);
+          client.transferTx = Number(transferTx);
+          client.persistentKeepalive = persistentKeepalive;
+        });
 
     return clients;
   }
+
 
   async getClient({ clientId }) {
     const config = await this.getConfig();
@@ -219,7 +229,7 @@ Endpoint = ${WG_HOST}:${WG_PORT}`;
     });
   }
 
-  async createClient({ name }) {
+  async createClient({ name, lifetime }) {
     if (!name) {
       throw new Error('Missing: Name');
     }
@@ -250,6 +260,7 @@ Endpoint = ${WG_HOST}:${WG_PORT}`;
     // Create Client
     const clientId = uuid.v4();
     const client = {
+      lifetime: lifetime || null,
       name,
       address,
       privateKey,
@@ -317,5 +328,25 @@ Endpoint = ${WG_HOST}:${WG_PORT}`;
 
     await this.saveConfig();
   }
+  async updateClientLifetime({ clientId, lifetime }) {
+    const client = await this.getClient({ clientId });
+    if (client) {
+      client.lifetime = lifetime || null;
+      client.updatedAt = new Date().toISOString();
+      await this.saveConfig();
+      return client;
+    }
+    return null;
+  }
 
+  async renewClientKeys({ clientId }) {
+    const client = await this.getClient({ clientId });
+
+    client.privateKey = await Util.exec('wg genkey');
+    client.publicKey = await Util.exec(`echo ${client.privateKey} | wg pubkey`);
+
+    client.updatedAt = new Date();
+
+    await this.saveConfig();
+  }
 };

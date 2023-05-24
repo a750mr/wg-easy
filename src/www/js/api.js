@@ -72,11 +72,11 @@ class API {
     })));
   }
 
-  async createClient({ name }) {
+  async createClient({ name, lifespan }) {
     return this.call({
       method: 'post',
       path: '/wireguard/client',
-      body: { name },
+      body: { name, lifespan },
     });
   }
 
@@ -116,5 +116,13 @@ class API {
       body: { address },
     });
   }
+  async updateClientLifetime({ clientId, lifespan }) {
+    return this.call({
+      method: 'put',
+      path: `/wireguard/client/${clientId}`,
+      body: { lifespan },
+    });
+  }
+
 
 }
